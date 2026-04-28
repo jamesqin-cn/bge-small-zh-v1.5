@@ -1,0 +1,10 @@
+node_modules
+models
+npm-debug.log
+logs
+.git
+.gitignore
+*.md
+.pid
+.workbuddy
+.cache

@@ -1,0 +1,7 @@
+node_modules/
+models
+logs/
+.env
+.DS_Store
+.cache
+.workbuddy

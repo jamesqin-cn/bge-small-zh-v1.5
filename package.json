@@ -1,0 +1,29 @@
+{
+  "name": "bge-small-zh-v1.5",
+  "version": "1.0.0",
+  "description": "Embedding Vector Service for BGE Small Chinese v1.5 (512 dimensions, GGUF quantized)",
+  "main": "src/server.js",
+  "scripts": {
+    "start": "node src/server.js",
+    "start:local": "node scripts/create-symlink.js && node src/server.js",
+    "create-symlink": "node scripts/create-symlink.js",
+    "stop": "lsof -ti:7078 | xargs kill -9 2>/dev/null; sleep 1 && echo '已清理端口 7078'",
+    "download": "HF_ENDPOINT=https://hf-mirror.com node scripts/download-model.js"
+  },
+  "dependencies": {
+    "@xenova/transformers": "^2.17.2",
+    "cors": "^2.8.5",
+    "express": "^4.19.2",
+    "uuid": "^9.0.0",
+    "winston": "^3.11.0",
+    "winston-daily-rotate-file": "^5.0.0"
+  },
+  "devDependencies": {
+    "node-fetch": "^3.3.2"
+  },
+  "overrides": {
+    "@xenova/transformers": {
+      "sharp": false
+    }
+  }
+}
