@@ -7,3 +7,5 @@ services:
     environment:
       - HF_ENDPOINT=https://hf-mirror.com
       - PORT=7078
+    volumes:
+      - ./models:/app/models
