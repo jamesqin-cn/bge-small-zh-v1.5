@@ -1,11 +1,13 @@
 services:
   embedding-svc:
     image: bge-small-zh-v1.5
+    build: .
     ports:
       - "7078:7078"
     restart: unless-stopped
     environment:
-      - HF_ENDPOINT=https://hf-mirror.com
+      - HF_ENDPOINT=https://hf-mirror.com/
       - PORT=7078
     volumes:
       - ./models:/app/models
+      - ./logs:/app/logs

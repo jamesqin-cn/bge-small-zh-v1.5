@@ -22,7 +22,11 @@ const PROJECT_ROOT = path.dirname(__dirname);
 const TARGET_DIR = path.join(PROJECT_ROOT, 'models', MODEL_NAME);
 
 // HuggingFace 镜像（默认使用国内镜像加速）
-const HF_ENDPOINT = process.env.HF_ENDPOINT || 'https://hf-mirror.com';
+let HF_ENDPOINT = process.env.HF_ENDPOINT || 'https://hf-mirror.com';
+// 标准化：移除尾部斜杠
+HF_ENDPOINT = HF_ENDPOINT.replace(/\/+$/, '');
+// 构建完整 URL 时确保有斜杠分隔
+const getBaseUrl = () => `${HF_ENDPOINT}/${MODEL_REPO}`;
 
 console.log('='.repeat(60));
 console.log(`下载模型：${MODEL_REPO}`);
@@ -90,7 +94,7 @@ function checkTargetDir() {
 // 获取文件下载链接
 async function getDownloadUrl(filename) {
   return new Promise((resolve, reject) => {
-    const url = `${HF_ENDPOINT}/${MODEL_REPO}/resolve/main/${filename}`;
+    const url = `${getBaseUrl()}/resolve/main/${filename}`;
     
     const client = url.startsWith('https') ? https : http;
     
@@ -102,33 +106,47 @@ async function getDownloadUrl(filename) {
     });
     
     req.on('response', (response) => {
-      // 处理重定向
-      if (response.statusCode === 301 || response.statusCode === 302 || 
-          response.statusCode === 303 || response.statusCode === 307 || 
-          response.statusCode === 308) {
-        const redirectUrl = response.headers.location;
-        if (redirectUrl) {
-          // 如果是相对路径，转换为绝对路径
-          let fullRedirectUrl = redirectUrl;
-          if (redirectUrl.startsWith('/')) {
-            fullRedirectUrl = new URL(redirectUrl, url).toString();
+      try {
+        // 处理重定向
+        if (response.statusCode === 301 || response.statusCode === 302 || 
+            response.statusCode === 303 || response.statusCode === 307 || 
+            response.statusCode === 308) {
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            // 如果是相对路径，转换为绝对路径
+            let fullRedirectUrl = redirectUrl;
+            if (redirectUrl.startsWith('/')) {
+              fullRedirectUrl = new URL(redirectUrl, url).toString();
+            }
+            getDownloadUrlFromUrl(fullRedirectUrl).then(resolve).catch(reject);
+          } else {
+            reject(new Error('Redirect without location header'));
           }
-          getDownloadUrlFromUrl(fullRedirectUrl).then(resolve).catch(reject);
+        } else if (response.statusCode === 200) {
+          resolve(url);
         } else {
-          reject(new Error('Redirect without location header'));
+          reject(new Error(`Failed to get download URL for ${filename}: ${response.statusCode}`));
         }
-      } else if (response.statusCode === 200) {
-        resolve(url);
-      } else {
-        reject(new Error(`Failed to get download URL for ${filename}: ${response.statusCode}`));
+      } catch (err) {
+        console.error(`\n❌ URL 处理错误：`);
+        console.error(`   文件名：${filename}`);
+        console.error(`   原始 URL：${url}`);
+        console.error(`   重定向 URL：${response.headers.location}`);
+        console.error(`   错误：${err.message}`);
+        reject(err);
       }
       response.destroy();
     });
     
-    req.on('error', reject);
+    req.on('error', (err) => {
+      console.error(`\n❌ 请求错误：${err.message}`);
+      console.error(`   文件名：${filename}`);
+      console.error(`   出错的 URL：${url}`);
+      reject(err);
+    });
     req.setTimeout(30000, () => {
-      request.destroy();
-      reject(new Error('Request timeout'));
+      req.destroy();
+      reject(new Error(`Request timeout for ${url}`));
     });
     
     req.end();
@@ -148,27 +166,44 @@ async function getDownloadUrlFromUrl(url) {
     });
     
     req.on('response', (response) => {
-      if (response.statusCode === 301 || response.statusCode === 302 || 
-          response.statusCode === 303 || response.statusCode === 307 || 
-          response.statusCode === 308) {
-        const redirectUrl = response.headers.location;
-        if (redirectUrl) {
-          getDownloadUrlFromUrl(redirectUrl).then(resolve).catch(reject);
+      try {
+        if (response.statusCode === 301 || response.statusCode === 302 || 
+            response.statusCode === 303 || response.statusCode === 307 || 
+            response.statusCode === 308) {
+          const redirectUrl = response.headers.location;
+          if (redirectUrl) {
+            // 处理相对路径
+            let fullRedirectUrl = redirectUrl;
+            if (redirectUrl.startsWith('/')) {
+              fullRedirectUrl = new URL(redirectUrl, url).toString();
+            }
+            getDownloadUrlFromUrl(fullRedirectUrl).then(resolve).catch(reject);
+          } else {
+            reject(new Error('Redirect without location header'));
+          }
+        } else if (response.statusCode === 200) {
+          resolve(url);
         } else {
-          reject(new Error('Redirect without location header'));
+          reject(new Error(`Failed to get download URL: ${response.statusCode}`));
         }
-      } else if (response.statusCode === 200) {
-        resolve(url);
-      } else {
-        reject(new Error(`Failed to get download URL: ${response.statusCode}`));
+      } catch (err) {
+        console.error(`\n❌ URL 处理错误（重定向追踪）：`);
+        console.error(`   当前 URL：${url}`);
+        console.error(`   重定向 URL：${response.headers.location}`);
+        console.error(`   错误：${err.message}`);
+        reject(err);
       }
       response.destroy();
     });
     
-    req.on('error', reject);
+    req.on('error', (err) => {
+      console.error(`\n❌ 请求错误（重定向追踪）：${err.message}`);
+      console.error(`   出错的 URL：${url}`);
+      reject(err);
+    });
     req.setTimeout(30000, () => {
       req.destroy();
-      reject(new Error('Request timeout'));
+      reject(new Error(`Request timeout for ${url}`));
     });
     
     req.end();
@@ -264,12 +299,14 @@ function downloadFile(url, filepath) {
     });
     
     request.on('error', (err) => {
+      console.error(`   下载错误：${err.message}`);
+      console.error(`   出错的 URL：${url}`);
       reject(err);
     });
     
     request.setTimeout(120000, () => {
       request.destroy();
-      reject(new Error('Download timeout'));
+      reject(new Error(`Download timeout for ${url}`));
     });
   });
 }
@@ -333,6 +370,13 @@ async function downloadModel() {
       
     } catch (error) {
       console.error(`\n❌ 下载失败 ${filename}:`, error.message);
+      console.error(`   错误类型：${error.constructor.name}`);
+      if (error.message.includes('Invalid URL')) {
+        console.error(`   ⚠️  Invalid URL 错误，当前环境变量：`);
+        console.error(`      HF_ENDPOINT = "${HF_ENDPOINT}"`);
+        console.error(`      MODEL_REPO = "${MODEL_REPO}"`);
+        console.error(`      拼接结果 = "${getBaseUrl()}/resolve/main/${filename}"`);
+      }
       throw error;
     }
   }
